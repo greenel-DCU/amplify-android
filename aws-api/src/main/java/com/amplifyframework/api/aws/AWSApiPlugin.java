@@ -119,9 +119,6 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
         AWSApiPluginConfiguration pluginConfig =
                 AWSApiPluginConfigurationReader.readFrom(pluginConfiguration);
 
-        final InterceptorFactory interceptorFactory =
-                new AppSyncSigV4SignerInterceptorFactory(authProvider);
-
         for (Map.Entry<String, ApiConfiguration> entry : pluginConfig.getApis().entrySet()) {
             final String apiName = entry.getKey();
             final ApiConfiguration apiConfiguration = entry.getValue();
@@ -129,6 +126,10 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
             final OkHttpClient.Builder builder = new OkHttpClient.Builder();
             builder.addNetworkInterceptor(UserAgentInterceptor.using(UserAgent::string));
             builder.eventListener(new ApiConnectionEventListener());
+
+            final InterceptorFactory interceptorFactory =
+                new AppSyncMixedModeSignerInterceptorFactory(authProvider);
+
             if (apiConfiguration.getAuthorizationType() != AuthorizationType.NONE) {
                 builder.addInterceptor(interceptorFactory.create(apiConfiguration));
             }

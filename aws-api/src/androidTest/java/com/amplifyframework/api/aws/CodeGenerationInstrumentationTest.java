@@ -114,6 +114,22 @@ public final class CodeGenerationInstrumentationTest {
         }
     }
 
+    @Test
+    public void queryListWithAuthOverride() throws ApiException {
+        final List<Person> matchingPeople = api.list(
+            PERSON_API_NAME,
+            Person.class,
+            Person.LAST_NAME.eq("Daudelin")
+                            .and(Person.FIRST_NAME.eq("David")
+                                                  .or(Person.FIRST_NAME.eq("Sarah")))
+        );
+
+        for (Person person : matchingPeople) {
+            assertTrue(Arrays.asList("David", "Sarah").contains(person.getFirstName()));
+            assertEquals("Daudelin", person.getLastName());
+        }
+    }
+
     /**
      * Tests the code generation for LIST query without a predicate.
      * @throws ApiException On failure to obtain valid response from endpoint
