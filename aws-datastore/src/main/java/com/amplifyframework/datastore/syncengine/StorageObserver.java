@@ -20,6 +20,7 @@ import androidx.annotation.NonNull;
 import com.amplifyframework.core.Action;
 import com.amplifyframework.core.Amplify;
 import com.amplifyframework.core.model.Model;
+import com.amplifyframework.core.model.query.predicate.QueryPredicates;
 import com.amplifyframework.datastore.appsync.SerializedModel;
 import com.amplifyframework.datastore.storage.LocalStorageAdapter;
 import com.amplifyframework.datastore.storage.StorageItemChange;
@@ -41,13 +42,16 @@ final class StorageObserver {
 
     private final LocalStorageAdapter localStorageAdapter;
     private final MutationOutbox mutationOutbox;
+    private final QueryPredicateProvider queryPredicateProvider;
     private final CompositeDisposable ongoingOperationsDisposable;
 
     StorageObserver(
             @NonNull LocalStorageAdapter localStorageAdapter,
-            @NonNull MutationOutbox mutationOutbox) {
+            @NonNull MutationOutbox mutationOutbox,
+            @NonNull QueryPredicateProvider queryPredicateProvider) {
         this.localStorageAdapter = Objects.requireNonNull(localStorageAdapter);
         this.mutationOutbox = Objects.requireNonNull(mutationOutbox);
+        this.queryPredicateProvider = queryPredicateProvider;
         this.ongoingOperationsDisposable = new CompositeDisposable();
     }
 
@@ -69,6 +73,11 @@ final class StorageObserver {
             .filter(possiblyCyclicChange -> {
                 // Don't continue if the storage change was caused by the sync engine itself
                 return !StorageItemChange.Initiator.SYNC_ENGINE.equals(possiblyCyclicChange.initiator());
+            })
+            .filter(change -> {
+                // Don't enqueue mutations for models that have an associated syncExpression of QueryPredicates.none().
+                String modelName = change.modelSchema().getName();
+                return !QueryPredicates.none().equals(queryPredicateProvider.getPredicate(modelName));
             })
             .map(this::toPendingMutation)
             .flatMapCompletable(mutationOutbox::enqueue)

@@ -128,7 +128,7 @@ public final class Orchestrator {
                 .queryPredicateProvider(queryPredicateProvider)
                 .onFailure(this::onApiSyncFailure)
                 .build();
-        this.storageObserver = new StorageObserver(localStorageAdapter, mutationOutbox);
+        this.storageObserver = new StorageObserver(localStorageAdapter, mutationOutbox, queryPredicateProvider);
         this.currentState = new AtomicReference<>(State.STOPPED);
         this.targetState = targetState;
         this.disposables = new CompositeDisposable();

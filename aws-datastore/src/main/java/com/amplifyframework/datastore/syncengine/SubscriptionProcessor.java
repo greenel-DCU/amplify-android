@@ -29,6 +29,7 @@ import com.amplifyframework.core.model.Model;
 import com.amplifyframework.core.model.ModelProvider;
 import com.amplifyframework.core.model.ModelSchema;
 import com.amplifyframework.core.model.query.predicate.QueryPredicate;
+import com.amplifyframework.core.model.query.predicate.QueryPredicates;
 import com.amplifyframework.datastore.AmplifyDisposables;
 import com.amplifyframework.datastore.DataStoreChannelEventName;
 import com.amplifyframework.datastore.DataStoreException;
@@ -40,6 +41,7 @@ import com.amplifyframework.hub.HubChannel;
 import com.amplifyframework.hub.HubEvent;
 import com.amplifyframework.logging.Logger;
 import com.amplifyframework.util.Empty;
+import com.amplifyframework.util.ForEach;
 
 import java.util.Arrays;
 import java.util.HashSet;
@@ -109,7 +111,13 @@ final class SubscriptionProcessor {
      * Start subscribing to model mutations.
      */
     synchronized void startSubscriptions() throws DataStoreException {
-        int subscriptionCount = modelProvider.modelNames().size() * SubscriptionType.values().length;
+        List<ModelSchema> modelSchemas = Observable.fromIterable(modelProvider.modelSchemas().values())
+            // Don't subscribe to models that have an associated syncExpression of QueryPredicates.none().
+            .filter(schema -> !QueryPredicates.none().equals(queryPredicateProvider.getPredicate(schema.getName())))
+            .toList()
+            .blockingGet();
+
+        int subscriptionCount = modelSchemas.size() * SubscriptionType.values().length;
         // Create a latch with the number of subscriptions are requesting. Each of these will be
         // counted down when each subscription's onStarted event is called.
         AbortableCountDownLatch<DataStoreException> latch = new AbortableCountDownLatch<>(subscriptionCount);
@@ -119,7 +127,7 @@ final class SubscriptionProcessor {
         buffer = ReplaySubject.create();
 
         Set<Observable<SubscriptionEvent<? extends Model>>> subscriptions = new HashSet<>();
-        for (ModelSchema modelSchema : modelProvider.modelSchemas().values()) {
+        for (ModelSchema modelSchema : modelSchemas) {
             for (SubscriptionType subscriptionType : SubscriptionType.values()) {
                 subscriptions.add(subscriptionObservable(appSync, subscriptionType, latch, modelSchema));
             }
@@ -148,7 +156,8 @@ final class SubscriptionProcessor {
                                 HubEvent.create(DataStoreChannelEventName.SUBSCRIPTIONS_ESTABLISHED));
             LOG.info(String.format(Locale.US,
                 "Started subscription processor for models: %s of types %s.",
-                modelProvider.modelNames(), Arrays.toString(SubscriptionType.values())
+                ForEach.inCollection(modelSchemas, ModelSchema::getName),
+                Arrays.toString(SubscriptionType.values())
             ));
         } else {
             throw new DataStoreException("Timed out waiting for subscription processor to start.", "Retry");

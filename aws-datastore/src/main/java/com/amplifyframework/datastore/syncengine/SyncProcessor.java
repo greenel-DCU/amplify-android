@@ -27,6 +27,7 @@ import com.amplifyframework.core.model.ModelProvider;
 import com.amplifyframework.core.model.ModelSchema;
 import com.amplifyframework.core.model.ModelSchemaRegistry;
 import com.amplifyframework.core.model.query.predicate.QueryPredicate;
+import com.amplifyframework.core.model.query.predicate.QueryPredicates;
 import com.amplifyframework.datastore.AmplifyDisposables;
 import com.amplifyframework.datastore.DataStoreChannelEventName;
 import com.amplifyframework.datastore.DataStoreConfigurationProvider;
@@ -49,6 +50,7 @@ import java.util.Objects;
 
 import io.reactivex.rxjava3.core.Completable;
 import io.reactivex.rxjava3.core.Flowable;
+import io.reactivex.rxjava3.core.Observable;
 import io.reactivex.rxjava3.core.Single;
 import io.reactivex.rxjava3.processors.BehaviorProcessor;
 
@@ -69,7 +71,6 @@ final class SyncProcessor {
     private final AppSync appSync;
     private final Merger merger;
     private final DataStoreConfigurationProvider dataStoreConfigurationProvider;
-    private final String[] modelNames;
     private final QueryPredicateProvider queryPredicateProvider;
 
     private SyncProcessor(Builder builder) {
@@ -80,9 +81,6 @@ final class SyncProcessor {
         this.merger = builder.merger;
         this.dataStoreConfigurationProvider = builder.dataStoreConfigurationProvider;
         this.queryPredicateProvider = builder.queryPredicateProvider;
-        this.modelNames =
-            ForEach.inCollection(modelProvider.modelSchemas().values(), ModelSchema::getName)
-                .toArray(new String[0]);
     }
 
     /**
@@ -100,7 +98,11 @@ final class SyncProcessor {
      */
     Completable hydrate() {
         final List<Completable> hydrationTasks = new ArrayList<>();
-        List<ModelSchema> modelSchemas = new ArrayList<>(modelProvider.modelSchemas().values());
+        List<ModelSchema> modelSchemas = Observable.fromIterable(modelProvider.modelSchemas().values())
+            // Don't sync models that have an associated syncExpression of QueryPredicates.none().
+            .filter(schema -> !QueryPredicates.none().equals(queryPredicateProvider.getPredicate(schema.getName())))
+            .toList()
+            .blockingGet();
 
         // And sort them all, according to their model's topological order,
         // So that when we save them, the references will exist.
@@ -116,6 +118,7 @@ final class SyncProcessor {
                 // This is where we trigger the syncQueriesStarted event since
                 // doOnSubscribe means that all upstream hydration tasks
                 // have started.
+                String[] modelNames = ForEach.inCollection(modelSchemas, ModelSchema::getName).toArray(new String[0]);
                 Amplify.Hub.publish(HubChannel.DATASTORE,
                     HubEvent.create(DataStoreChannelEventName.SYNC_QUERIES_STARTED,
                         new SyncQueriesStartedEvent(modelNames)
