@@ -48,6 +48,7 @@ import okhttp3.ResponseBody;
 public final class AppSyncGraphQLOperation<R> extends GraphQLOperation<R> {
     private static final Logger LOG = Amplify.Logging.forNamespace("amplify:aws-api");
     private static final String CONTENT_TYPE = "application/json";
+    private static final String AMPLIFY_AUTH_MODE_OVERRIDE_HEADER = "Amplify-AuthMode-Override";
 
     private final String endpoint;
     private final OkHttpClient client;
@@ -88,12 +89,15 @@ public final class AppSyncGraphQLOperation<R> extends GraphQLOperation<R> {
 
         try {
             LOG.debug("Request: " + getRequest().getContent());
-            ongoingCall = client.newCall(new Request.Builder()
-                    .url(endpoint)
-                    .addHeader("accept", CONTENT_TYPE)
-                    .addHeader("content-type", CONTENT_TYPE)
-                    .post(RequestBody.create(getRequest().getContent(), MediaType.parse(CONTENT_TYPE)))
-                    .build());
+            Request.Builder builder = new Request.Builder()
+                .url(endpoint)
+                .addHeader("accept", CONTENT_TYPE)
+                .addHeader("content-type", CONTENT_TYPE)
+                .post(RequestBody.create(getRequest().getContent(), MediaType.parse(CONTENT_TYPE)));
+            if (getRequest().getAuthorizationType() != null) {
+                builder.addHeader(AMPLIFY_AUTH_MODE_OVERRIDE_HEADER, getRequest().getAuthorizationType().name());
+            }
+            ongoingCall = client.newCall(builder.build());
             ongoingCall.enqueue(new OkHttpCallback());
         } catch (Exception error) {
             // Cancel if possible

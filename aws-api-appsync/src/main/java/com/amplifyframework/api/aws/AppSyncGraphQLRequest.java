@@ -20,6 +20,7 @@ import androidx.annotation.NonNull;
 import androidx.core.util.ObjectsCompat;
 
 import com.amplifyframework.AmplifyException;
+import com.amplifyframework.api.ApiAuthorizationType;
 import com.amplifyframework.api.graphql.GraphQLRequest;
 import com.amplifyframework.api.graphql.Operation;
 import com.amplifyframework.api.graphql.QueryType;
@@ -52,7 +53,7 @@ public final class AppSyncGraphQLRequest<R> extends GraphQLRequest<R> {
      * Constructor for AppSyncGraphQLRequest.
      */
     private AppSyncGraphQLRequest(Builder builder) {
-        super(builder.responseType, new GsonVariablesSerializer());
+        super(builder.responseType, new GsonVariablesSerializer(), builder.authorizationType);
         this.modelSchema = builder.modelSchema;
         this.operation = builder.operation;
         this.selectionSet = builder.selectionSet;
@@ -158,12 +159,19 @@ public final class AppSyncGraphQLRequest<R> extends GraphQLRequest<R> {
                 ObjectsCompat.equals(operation, that.operation) &&
                 ObjectsCompat.equals(selectionSet, that.selectionSet) &&
                 ObjectsCompat.equals(variables, that.variables) &&
-                ObjectsCompat.equals(variableTypes, that.variableTypes);
+                ObjectsCompat.equals(variableTypes, that.variableTypes) &&
+                ObjectsCompat.equals(getAuthorizationType(), that.getAuthorizationType());
     }
 
     @Override
     public int hashCode() {
-        return ObjectsCompat.hash(super.hashCode(), modelSchema, operation, selectionSet, variables, variableTypes);
+        return ObjectsCompat.hash(super.hashCode(),
+                                  modelSchema,
+                                  operation,
+                                  selectionSet,
+                                  variables,
+                                  variableTypes,
+                                  getAuthorizationType());
     }
 
     @Override
@@ -176,6 +184,7 @@ public final class AppSyncGraphQLRequest<R> extends GraphQLRequest<R> {
                 ", variableTypes=" + variableTypes +
                 ", responseType=" + getResponseType() +
                 ", variablesSerializer=" + getVariablesSerializer() +
+                ", authorizationType=" + getAuthorizationType() +
                 '}';
     }
 
@@ -205,12 +214,14 @@ public final class AppSyncGraphQLRequest<R> extends GraphQLRequest<R> {
         private GraphQLRequestOptions requestOptions;
         private Type responseType;
         private SelectionSet selectionSet;
+        private ApiAuthorizationType authorizationType;
         private final Map<String, Object> variables;
         private final Map<String, String> variableTypes;
 
         Builder() {
             this.variables = new HashMap<>();
             this.variableTypes = new HashMap<>();
+            this.authorizationType = null;
         }
 
         <R> Builder(AppSyncGraphQLRequest<R> request) {
@@ -220,6 +231,7 @@ public final class AppSyncGraphQLRequest<R> extends GraphQLRequest<R> {
             this.selectionSet = new SelectionSet(request.selectionSet);
             this.variables = new HashMap<>(request.variables);
             this.variableTypes = new HashMap<>(request.variableTypes);
+            this.authorizationType = request.getAuthorizationType();
         }
 
         /**
@@ -284,6 +296,17 @@ public final class AppSyncGraphQLRequest<R> extends GraphQLRequest<R> {
             Objects.requireNonNull(type);
             this.variables.put(key, value);
             this.variableTypes.put(key, type);
+            return this;
+        }
+
+        /**
+         * Set the desired authorization type.
+         * @param authorizationType to be used for the request.
+         * @return this builder instance.
+         */
+        public Builder authorizationType(ApiAuthorizationType authorizationType) {
+            Objects.requireNonNull(authorizationType);
+            this.authorizationType = authorizationType;
             return this;
         }
 

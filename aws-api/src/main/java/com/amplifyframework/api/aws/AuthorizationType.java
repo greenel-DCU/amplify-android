@@ -15,13 +15,15 @@
 
 package com.amplifyframework.api.aws;
 
+import com.amplifyframework.api.ApiAuthorizationType;
+
 /**
  * The types of authorization one can use while talking to an Amazon
  * AppSync GraphQL backend.
  * @see <a href="https://docs.aws.amazon.com/appsync/latest/devguide/security.html">AppSync Security</a>
  */
 @SuppressWarnings("LineLength") // Web links
-public enum AuthorizationType {
+public enum AuthorizationType implements ApiAuthorizationType {
 
     /**
      * A hardcoded key which can provide throttling for an

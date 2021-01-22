@@ -18,6 +18,7 @@ package com.amplifyframework.api.graphql;
 import android.text.TextUtils;
 import androidx.core.util.ObjectsCompat;
 
+import com.amplifyframework.api.ApiAuthorizationType;
 import com.amplifyframework.util.Wrap;
 
 import java.lang.reflect.Type;
@@ -31,6 +32,7 @@ import java.util.Map;
 public abstract class GraphQLRequest<R> {
     private final Type responseType;
     private final VariablesSerializer variablesSerializer;
+    private final ApiAuthorizationType authorizationType;
 
     /**
      * Constructor for GraphQLRequest with specification for type of API call.
@@ -38,11 +40,26 @@ public abstract class GraphQLRequest<R> {
      * @param variablesSerializer an object which can take a map of variables and serialize it properly
      */
     public GraphQLRequest(
+        Type responseType,
+        VariablesSerializer variablesSerializer
+    ) {
+        this(responseType, variablesSerializer, null);
+    }
+
+    /**
+     * Constructor for GraphQLRequest with specification for type of API call.
+     * @param responseType Type of R, the data contained in the GraphQLResponse expected from this request
+     * @param variablesSerializer an object which can take a map of variables and serialize it properly
+     * @param authorizationType the authorization type to use for the request.
+     */
+    public GraphQLRequest(
             Type responseType,
-            VariablesSerializer variablesSerializer
+            VariablesSerializer variablesSerializer,
+            ApiAuthorizationType authorizationType
     ) {
         this.responseType = responseType;
         this.variablesSerializer = variablesSerializer;
+        this.authorizationType = authorizationType;
     }
 
     /**
@@ -80,6 +97,14 @@ public abstract class GraphQLRequest<R> {
      */
     public Type getResponseType() {
         return responseType;
+    }
+
+    /**
+     * Returns the authorization type of the request.
+     * @return authorization type.
+     */
+    public ApiAuthorizationType getAuthorizationType() {
+        return authorizationType;
     }
 
     /**

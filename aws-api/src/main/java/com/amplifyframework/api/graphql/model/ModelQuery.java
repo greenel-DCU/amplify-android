@@ -17,7 +17,9 @@ package com.amplifyframework.api.graphql.model;
 
 import androidx.annotation.NonNull;
 
+import com.amplifyframework.api.ApiAuthorizationType;
 import com.amplifyframework.api.aws.AppSyncGraphQLRequestFactory;
+import com.amplifyframework.api.aws.AuthorizationType;
 import com.amplifyframework.api.graphql.GraphQLRequest;
 import com.amplifyframework.api.graphql.PaginatedResult;
 import com.amplifyframework.core.model.Model;
@@ -48,7 +50,25 @@ public final class ModelQuery {
             @NonNull Class<M> modelType,
             @NonNull String modelId
     ) {
-        return AppSyncGraphQLRequestFactory.buildQuery(modelType, modelId);
+        return get(modelType, modelId, null);
+    }
+
+    /**
+     * Creates a {@link GraphQLRequest} that represents a query that expects a single value as a result.
+     * The request will be created with the correct correct document based on the model schema and
+     * variables based on given {@code modelId}.
+     * @param modelType the model class.
+     * @param modelId the model identifier.
+     * @param authorizationType the authorization type for the request.
+     * @param <M> the concrete model type.
+     * @return a valid {@link GraphQLRequest} instance.
+     */
+    public static <M extends Model> GraphQLRequest<M> get(
+        @NonNull Class<M> modelType,
+        @NonNull String modelId,
+        AuthorizationType authorizationType
+    ) {
+        return AppSyncGraphQLRequestFactory.buildQuery(modelType, modelId, authorizationType);
     }
 
     /**
@@ -64,9 +84,26 @@ public final class ModelQuery {
             @NonNull Class<M> modelType,
             @NonNull QueryPredicate predicate
     ) {
+        return list(modelType, predicate, AuthorizationType.NONE);
+    }
+
+    /**
+     * Creates a {@link GraphQLRequest} that represents a query that expects multiple values as a result.
+     * The request will be created with the correct document based on the model schema and variables
+     * for filtering based on the given predicate.
+     * @param modelType the model class.
+     * @param predicate the predicate for filtering.
+     * @param <M> the concrete model type.
+     * @return a valid {@link GraphQLRequest} instance.
+     */
+    public static <M extends Model> GraphQLRequest<PaginatedResult<M>> list(
+        @NonNull Class<M> modelType,
+        @NonNull QueryPredicate predicate,
+        ApiAuthorizationType authorizationType
+    ) {
         Objects.requireNonNull(modelType);
         Objects.requireNonNull(predicate);
-        return AppSyncGraphQLRequestFactory.buildQuery(modelType, predicate);
+        return AppSyncGraphQLRequestFactory.buildQuery(modelType, predicate, authorizationType);
     }
 
     /**
@@ -78,7 +115,21 @@ public final class ModelQuery {
      * @see #list(Class, QueryPredicate)
      */
     public static <M extends Model> GraphQLRequest<PaginatedResult<M>> list(@NonNull Class<M> modelType) {
-        return list(modelType, QueryPredicates.all());
+        return list(modelType, (ApiAuthorizationType) null);
+    }
+
+    /**
+     * Creates a {@link GraphQLRequest} that represents a query that expects multiple values as a result.
+     * The request will be created with the correct document based on the model schema.
+     * @param <M> the concrete model type.
+     * @param modelType the model class.
+     * @param authorizationType
+     * @return a valid {@link GraphQLRequest} instance.
+     * @see #list(Class, QueryPredicate)
+     */
+    public static <M extends Model> GraphQLRequest<PaginatedResult<M>> list(@NonNull Class<M> modelType,
+                                                                            ApiAuthorizationType authorizationType) {
+        return list(modelType, QueryPredicates.all(), authorizationType);
     }
 
     /**

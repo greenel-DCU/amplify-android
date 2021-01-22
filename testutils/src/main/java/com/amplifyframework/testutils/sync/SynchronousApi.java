@@ -17,6 +17,7 @@ package com.amplifyframework.testutils.sync;
 
 import androidx.annotation.NonNull;
 
+import com.amplifyframework.api.ApiAuthorizationType;
 import com.amplifyframework.api.ApiCategory;
 import com.amplifyframework.api.ApiCategoryBehavior;
 import com.amplifyframework.api.ApiException;
@@ -247,6 +248,32 @@ public final class SynchronousApi {
             @NonNull QueryPredicate predicate) throws ApiException {
         final PaginatedResult<T> queryResults = awaitResponseData((onResponse, onFailure) ->
             asyncDelegate.query(apiName, ModelQuery.list(clazz, predicate), onResponse, onFailure)
+        );
+        final List<T> results = new ArrayList<>();
+        for (T item : queryResults) {
+            results.add(item);
+        }
+        return Immutable.of(results);
+    }
+
+    /**
+     * Gets a list of models of certain class and that match a querying predicate.
+     *
+     * @param apiName   One of the configured API endpoints
+     * @param clazz     The class of models being listed
+     * @param predicate A querying predicate to match against models of the requested class
+     * @param <T>       The type of models being listed
+     * @return A list of models of the requested type, that match the predicate
+     * @throws ApiException If unable to obtain response from endpoint
+     */
+    @NonNull
+    public <T extends Model> List<T> list(
+        @NonNull String apiName,
+        @NonNull Class<T> clazz,
+        @NonNull QueryPredicate predicate,
+        @NonNull ApiAuthorizationType authorizationType) throws ApiException {
+        final PaginatedResult<T> queryResults = awaitResponseData((onResponse, onFailure) ->
+            asyncDelegate.query(apiName, ModelQuery.list(clazz, predicate, authorizationType), onResponse, onFailure)
         );
         final List<T> results = new ArrayList<>();
         for (T item : queryResults) {

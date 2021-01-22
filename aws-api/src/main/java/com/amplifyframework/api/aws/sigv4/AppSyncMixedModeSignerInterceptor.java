@@ -1,20 +1,33 @@
+/*
+ * Copyright 2019 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License").
+ * You may not use this file except in compliance with the License.
+ * A copy of the License is located at
+ *
+ *  http://aws.amazon.com/apache2.0
+ *
+ * or in the "license" file accompanying this file. This file is distributed
+ * on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing
+ * permissions and limitations under the License.
+ */
+
 package com.amplifyframework.api.aws.sigv4;
 
 import androidx.annotation.NonNull;
 
-import com.amazonaws.DefaultRequest;
-import com.amazonaws.auth.AWSCredentials;
-import com.amazonaws.http.HttpMethodName;
-import com.amazonaws.util.IOUtils;
-import com.amplifyframework.api.ApiException;
 import com.amplifyframework.api.aws.ApiAuthProviders;
 import com.amplifyframework.api.aws.AuthorizationType;
 import com.amplifyframework.api.aws.EndpointType;
 import com.amplifyframework.api.graphql.GraphQLResponse;
 import com.amplifyframework.util.Empty;
 import com.amplifyframework.util.GsonFactory;
-import com.google.gson.JsonObject;
 
+import com.amazonaws.DefaultRequest;
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.http.HttpMethodName;
+import com.amazonaws.util.IOUtils;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.ByteArrayInputStream;
@@ -35,7 +48,10 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okio.Buffer;
 
-public class AppSyncMixedModeSignerInterceptor implements Interceptor {
+/**
+ * Interceptor that determines which authorization mode to use based on a header value.
+ */
+public final class AppSyncMixedModeSignerInterceptor implements Interceptor {
     // TODO: Move these to a central location
     private static final String CONTENT_TYPE = "application/json";
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse(CONTENT_TYPE);
@@ -43,24 +59,30 @@ public class AppSyncMixedModeSignerInterceptor implements Interceptor {
     private static final String API_GATEWAY_SERVICE_NAME = "apigateway";
     private static final String X_API_KEY = "x-api-key";
     private static final String AUTHORIZATION = "authorization";
-    public static final String AMPLIFY_AUTH_MODE_OVERRIDE_HEADER = "Amplify-AuthMode-Override";
+    private static final int BAD_REQUEST_HTTP_CODE = 400;
+    private static final String AMPLIFY_AUTH_MODE_OVERRIDE_HEADER = "Amplify-AuthMode-Override";
 
     private final AuthorizationType defaultAuthMode;
     private final ApiAuthProviders apiAuthProviders;
     private final EndpointType endpointType;
     private final String awsRegion;
-    private final String apiKey;
 
+    /**
+     * Constructor for the interceptor.
+     * @param defaultAuthMode the default auth mode for the interceptor.
+     * @param endpointType The type of API (GraphQL or REST).
+     * @param awsRegion AWS region where the API is deployed.
+     * @param apiKey API key (if available).
+     * @param apiAuthProviders Instance of the implemented auth providers.
+     */
     public AppSyncMixedModeSignerInterceptor(AuthorizationType defaultAuthMode,
                                              EndpointType endpointType,
                                              String awsRegion,
-                                             String apiKey,
                                              ApiAuthProviders apiAuthProviders) {
         this.defaultAuthMode = defaultAuthMode;
         this.awsRegion = awsRegion;
         this.endpointType = endpointType;
         this.apiAuthProviders = apiAuthProviders;
-        this.apiKey = apiKey;
     }
 
     @NotNull
@@ -85,7 +107,7 @@ public class AppSyncMixedModeSignerInterceptor implements Interceptor {
         dr.setEndpoint(req.url().uri());
         //copy all the headers
         for (String headerName : req.headers().names()) {
-            if (!AMPLIFY_AUTH_MODE_OVERRIDE_HEADER.equals(headerName)){
+            if (!AMPLIFY_AUTH_MODE_OVERRIDE_HEADER.equals(headerName)) {
                 dr.addHeader(headerName, req.header(headerName));
             }
         }
@@ -112,7 +134,9 @@ public class AppSyncMixedModeSignerInterceptor implements Interceptor {
         // Remove that header before sending it
         if (AuthorizationType.AWS_IAM.equals(reqAuthMode)) {
             if (apiAuthProviders.getAWSCredentialsProvider() == null) {
-                return buildErrorResponse(req, 400, "Unable to sign request. No AWS credentials provider configured.");
+                return buildErrorResponse(req,
+                                          BAD_REQUEST_HTTP_CODE,
+                                          "Unable to sign request. No AWS credentials provider configured.");
             }
             //get the aws credentials from provider.
             try {
@@ -129,7 +153,9 @@ public class AppSyncMixedModeSignerInterceptor implements Interceptor {
             }
         } else if (AuthorizationType.AMAZON_COGNITO_USER_POOLS.equals(reqAuthMode)) {
             if (apiAuthProviders.getCognitoUserPoolsAuthProvider() == null) {
-                return buildErrorResponse(req, 400, "Unable to sign request. No Cognito User Pools provider configured.");
+                return buildErrorResponse(req,
+                                          BAD_REQUEST_HTTP_CODE,
+                                          "Unable to sign request. No Cognito User Pools provider configured.");
             }
             try {
                 dr.addHeader(AUTHORIZATION, apiAuthProviders.getCognitoUserPoolsAuthProvider().getLatestAuthToken());
@@ -138,7 +164,9 @@ public class AppSyncMixedModeSignerInterceptor implements Interceptor {
             }
         } else if (AuthorizationType.OPENID_CONNECT.equals(reqAuthMode)) {
             if (apiAuthProviders.getOidcAuthProvider() == null) {
-                return buildErrorResponse(req, 400, "Unable to sign request. No OIDC provider configured.");
+                return buildErrorResponse(req,
+                                          BAD_REQUEST_HTTP_CODE,
+                                          "Unable to sign request. No OIDC provider configured.");
             }
             try {
                 dr.addHeader(AUTHORIZATION, apiAuthProviders.getOidcAuthProvider().getLatestAuthToken());
@@ -146,10 +174,12 @@ public class AppSyncMixedModeSignerInterceptor implements Interceptor {
                 throw new IOException("Failed to retrieve OIDC token.", error);
             }
         } else if (AuthorizationType.API_KEY.equals(reqAuthMode)) {
-            if (apiAuthProviders.getApiKeyAuthProvider() == null && apiKey == null) {
-                return buildErrorResponse(req, 400, "Unable to sign request. No API key provider configured.");
+            if (apiAuthProviders.getApiKeyAuthProvider() == null) {
+                return buildErrorResponse(req,
+                                          BAD_REQUEST_HTTP_CODE,
+                                          "Unable to sign request. No API key provider configured.");
             }
-            dr.addHeader(X_API_KEY, apiKey != null ? apiKey : apiAuthProviders.getApiKeyAuthProvider().getAPIKey());
+            dr.addHeader(X_API_KEY, apiAuthProviders.getApiKeyAuthProvider().getAPIKey());
         }
 
         Request.Builder okReqBuilder = new Request.Builder();
@@ -175,7 +205,10 @@ public class AppSyncMixedModeSignerInterceptor implements Interceptor {
     }
 
     private static Response buildErrorResponse(Request request, int httpCode, String errorMessage) {
-        GraphQLResponse.Error error = new GraphQLResponse.Error(errorMessage, Collections.emptyList(), Collections.emptyList(), Collections.emptyMap());
+        GraphQLResponse.Error error = new GraphQLResponse.Error(errorMessage,
+                                                                Collections.emptyList(),
+                                                                Collections.emptyList(),
+                                                                Collections.emptyMap());
         return new Response
             .Builder()
             .request(request)
@@ -183,7 +216,7 @@ public class AppSyncMixedModeSignerInterceptor implements Interceptor {
             .message(errorMessage)
             .code(httpCode)
             .body(ResponseBody
-                      .create("{\"errors\":["+ GsonFactory.instance().toJson(error) + "]}",
+                      .create("{\"errors\":[" + GsonFactory.instance().toJson(error) + "]}",
                               MediaType.get("application/json")))
             .build();
     }

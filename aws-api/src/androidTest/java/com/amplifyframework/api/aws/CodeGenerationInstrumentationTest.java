@@ -114,6 +114,10 @@ public final class CodeGenerationInstrumentationTest {
         }
     }
 
+    /**
+     * Test query with auth override.
+     * @throws ApiException On failure to obtain valid response from endpoint.
+     */
     @Test
     public void queryListWithAuthOverride() throws ApiException {
         final List<Person> matchingPeople = api.list(
@@ -121,7 +125,8 @@ public final class CodeGenerationInstrumentationTest {
             Person.class,
             Person.LAST_NAME.eq("Daudelin")
                             .and(Person.FIRST_NAME.eq("David")
-                                                  .or(Person.FIRST_NAME.eq("Sarah")))
+                                                  .or(Person.FIRST_NAME.eq("Sarah"))),
+            AuthorizationType.AWS_IAM
         );
 
         for (Person person : matchingPeople) {

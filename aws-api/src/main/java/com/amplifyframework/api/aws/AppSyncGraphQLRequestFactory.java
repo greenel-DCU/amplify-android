@@ -18,6 +18,7 @@ package com.amplifyframework.api.aws;
 import androidx.annotation.NonNull;
 
 import com.amplifyframework.AmplifyException;
+import com.amplifyframework.api.ApiAuthorizationType;
 import com.amplifyframework.api.graphql.GraphQLRequest;
 import com.amplifyframework.api.graphql.MutationType;
 import com.amplifyframework.api.graphql.PaginatedResult;
@@ -84,6 +85,26 @@ public final class AppSyncGraphQLRequestFactory {
             Class<T> modelClass,
             String objectId
     ) {
+        return buildQuery(modelClass, objectId, null);
+    }
+
+    /**
+     * Creates a {@link GraphQLRequest} that represents a query that expects a single value as a result.
+     * The request will be created with the correct document based on the model schema and
+     * variables based on given {@code objectId}.
+     *
+     * @param <R> the response type.
+     * @param <T> the concrete model type.
+     * @param modelClass the model class.
+     * @param objectId the model identifier.
+     * @param authorizationType the authorization type for the request.
+     * @return a valid {@link GraphQLRequest} instance.
+     * @throws IllegalStateException when the model schema does not contain the expected information.
+     */
+    public static <R, T extends Model> GraphQLRequest<R> buildQuery(
+            Class<T> modelClass,
+            String objectId,
+            ApiAuthorizationType authorizationType) {
         try {
             return AppSyncGraphQLRequest.builder()
                     .modelClass(modelClass)
@@ -113,11 +134,31 @@ public final class AppSyncGraphQLRequestFactory {
      * @throws IllegalStateException when the model schema does not contain the expected information.
      */
     public static <R, T extends Model> GraphQLRequest<R> buildQuery(
-            Class<T> modelClass,
-            QueryPredicate predicate
+        Class<T> modelClass,
+        QueryPredicate predicate
     ) {
+        return buildQuery(modelClass, predicate, null);
+    }
+
+    /**
+     * Creates a {@link GraphQLRequest} that represents a query that expects multiple values as a result.
+     * The request will be created with the correct document based on the model schema and variables
+     * for filtering based on the given predicate.
+     *
+     * @param <R> the response type.
+     * @param <T> the concrete model type.
+     * @param modelClass the model class.
+     * @param predicate the model predicate.
+     * @param authorizationType the authorization type for the request.
+     * @return a valid {@link GraphQLRequest} instance.
+     * @throws IllegalStateException when the model schema does not contain the expected information.
+     */
+    public static <R, T extends Model> GraphQLRequest<R> buildQuery(
+        Class<T> modelClass,
+        QueryPredicate predicate,
+        ApiAuthorizationType authorizationType) {
         Type dataType = TypeMaker.getParameterizedType(PaginatedResult.class, modelClass);
-        return buildQuery(modelClass, predicate, DEFAULT_QUERY_LIMIT, dataType);
+        return buildQuery(modelClass, predicate, DEFAULT_QUERY_LIMIT, dataType, authorizationType);
     }
 
     /**
@@ -130,15 +171,39 @@ public final class AppSyncGraphQLRequestFactory {
      * @param modelClass the model class.
      * @param predicate the predicate for filtering.
      * @param limit the page size/limit.
+     * @param authorizationType the authorization type for the request.
      * @param <R> the response type.
      * @param <T> the concrete model type.
      * @return a valid {@link GraphQLRequest} instance.
      */
     public static <R, T extends Model> GraphQLRequest<R> buildPaginatedResultQuery(
+        Class<T> modelClass,
+        QueryPredicate predicate,
+        int limit
+    ) {
+        return buildPaginatedResultQuery(modelClass, predicate, limit, null);
+    }
+
+    /**
+     * Creates a {@link GraphQLRequest} that represents a query that expects multiple values as a result
+     * within a certain range (i.e. paginated).
+     *
+     * The request will be created with the correct document based on the model schema and variables
+     * for filtering based on the given predicate and pagination.
+     *
+     * @param <R> the response type.
+     * @param <T> the concrete model type.
+     * @param modelClass the model class.
+     * @param predicate the predicate for filtering.
+     * @param limit the page size/limit.
+     * @param authorizationType the authorization type for the request.
+     * @return a valid {@link GraphQLRequest} instance.
+     */
+    public static <R, T extends Model> GraphQLRequest<R> buildPaginatedResultQuery(
             Class<T> modelClass,
             QueryPredicate predicate,
-            int limit
-    ) {
+            int limit,
+            ApiAuthorizationType authorizationType) {
         Type responseType = TypeMaker.getParameterizedType(PaginatedResult.class, modelClass);
         return buildQuery(modelClass, predicate, limit, responseType);
     }
@@ -149,12 +214,22 @@ public final class AppSyncGraphQLRequestFactory {
             int limit,
             Type responseType
     ) {
+        return buildQuery(modelClass, predicate, limit, responseType, null);
+    }
+
+    static <R, T extends Model> GraphQLRequest<R> buildQuery(
+            Class<T> modelClass,
+            QueryPredicate predicate,
+            int limit,
+            Type responseType,
+            ApiAuthorizationType authorizationType) {
         try {
             String modelName = ModelSchema.fromModelClass(modelClass).getName();
             AppSyncGraphQLRequest.Builder builder = AppSyncGraphQLRequest.builder()
                     .modelClass(modelClass)
                     .operation(QueryType.LIST)
                     .requestOptions(new ApiGraphQLRequestOptions())
+                    .authorizationType(authorizationType)
                     .responseType(responseType);
 
             if (!QueryPredicates.all().equals(predicate)) {
@@ -186,8 +261,27 @@ public final class AppSyncGraphQLRequestFactory {
     public static <R, T extends Model> GraphQLRequest<R> buildMutation(
             T model,
             QueryPredicate predicate,
-            MutationType type
-    ) {
+            MutationType type) {
+        return buildMutation(model, predicate, type, null);
+    }
+
+    /**
+     * Creates a {@link GraphQLRequest} that represents a mutation of a given type.
+     *
+     * @param <R> the response type.
+     * @param <T> the concrete model type.
+     * @param model the model instance.
+     * @param predicate the model predicate.
+     * @param type the mutation type.
+     * @param authorizationType the authorization type for the request.
+     * @return a valid {@link GraphQLRequest} instance.
+     * @throws IllegalStateException when the model schema does not contain the expected information.
+     */
+    public static <R, T extends Model> GraphQLRequest<R> buildMutation(
+            T model,
+            QueryPredicate predicate,
+            MutationType type,
+            ApiAuthorizationType authorizationType) {
         try {
             Class<? extends Model> modelClass = model.getClass();
             ModelSchema schema = ModelSchema.fromModelClass(modelClass);
@@ -196,6 +290,7 @@ public final class AppSyncGraphQLRequestFactory {
             AppSyncGraphQLRequest.Builder builder = AppSyncGraphQLRequest.builder()
                     .operation(type)
                     .modelClass(modelClass)
+                    .authorizationType(authorizationType)
                     .requestOptions(new ApiGraphQLRequestOptions())
                     .responseType(modelClass);
 
@@ -238,14 +333,33 @@ public final class AppSyncGraphQLRequestFactory {
      * @throws IllegalStateException when the model schema does not contain the expected information.
      */
     public static <R, T extends Model> GraphQLRequest<R> buildSubscription(
-            Class<T> modelClass,
-            SubscriptionType subscriptionType
+        Class<T> modelClass,
+        SubscriptionType subscriptionType
     ) {
+        return buildSubscription(modelClass, subscriptionType, null);
+    }
+
+    /**
+     * Creates a {@link GraphQLRequest} that represents a subscription of a given type.
+     *
+     * @param <R> the response type.
+     * @param <T> the concrete model type.
+     * @param modelClass the model type.
+     * @param subscriptionType the subscription type.
+     * @param authorizationType the authorization type for the request.
+     * @return a valid {@link GraphQLRequest} instance.
+     * @throws IllegalStateException when the model schema does not contain the expected information.
+     */
+    public static <R, T extends Model> GraphQLRequest<R> buildSubscription(
+        Class<T> modelClass,
+        SubscriptionType subscriptionType,
+        ApiAuthorizationType authorizationType) {
         try {
             return AppSyncGraphQLRequest.builder()
                     .modelClass(modelClass)
                     .operation(subscriptionType)
                     .requestOptions(new ApiGraphQLRequestOptions())
+                    .authorizationType(authorizationType)
                     .responseType(modelClass)
                     .build();
         } catch (AmplifyException exception) {

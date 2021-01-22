@@ -17,6 +17,11 @@ package com.amplifyframework.api.aws;
 
 import androidx.test.core.app.ApplicationProvider;
 
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.internal.StaticCredentialsProvider;
+import com.amplifyframework.api.ApiAuthorizationType;
 import com.amplifyframework.api.ApiException;
 import com.amplifyframework.api.events.ApiChannelEventName;
 import com.amplifyframework.api.events.ApiEndpointStatusChangeEvent;
@@ -46,6 +51,7 @@ import org.robolectric.RobolectricTestRunner;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import io.reactivex.rxjava3.core.Observable;
 import okhttp3.HttpUrl;
@@ -55,6 +61,7 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -65,6 +72,8 @@ import static org.junit.Assert.assertTrue;
  */
 @RunWith(RobolectricTestRunner.class)
 public final class AWSApiPluginTest {
+    private static final String AMPLIFY_AUTH_MODE_OVERRIDE_HEADER = "Amplify-AuthMode-Override";
+
     private MockWebServer webServer;
     private HttpUrl baseUrl;
     private AWSApiPlugin plugin;
@@ -88,8 +97,10 @@ public final class AWSApiPluginTest {
                 .put("region", "us-east-1")
                 .put("authorizationType", "API_KEY")
                 .put("apiKey", "FAKE-API-KEY"));
-
-        this.plugin = new AWSApiPlugin();
+        ApiAuthProviders apiAuthProviders = ApiAuthProviders.builder()
+                                                 .awsCredentialsProvider(new StaticCredentialsProvider(new BasicAWSCredentials("test", "test")))
+                                                 .build();
+        this.plugin = new AWSApiPlugin(apiAuthProviders);
         this.plugin.configure(configuration, ApplicationProvider.getApplicationContext());
     }
 
@@ -164,6 +175,28 @@ public final class AWSApiPluginTest {
                 .toList()
                 .blockingGet()
         );
+    }
+
+    @Test
+    public void graphQlQueryWithAuthOverride() throws ApiException, InterruptedException {
+        webServer.enqueue(new MockResponse()
+                              .setBody(Resources.readAsString("blog-owners-query-results.json")));
+
+        GraphQLResponse<PaginatedResult<BlogOwner>> actualResponse =
+            Await.<GraphQLResponse<PaginatedResult<BlogOwner>>, ApiException>result(((onResult, onError) ->
+                plugin.query(ModelQuery.list(BlogOwner.class, AuthorizationType.AWS_IAM), onResult, onError)));
+
+        assertEquals(
+            Arrays.asList("Curly", "Moe", "Larry"),
+            Observable.fromIterable(actualResponse.getData())
+                      .map(BlogOwner::getName)
+                      .toList()
+                      .blockingGet()
+        );
+        RecordedRequest recordedRequest = webServer.takeRequest(5, TimeUnit.SECONDS);
+
+        assertNotNull(recordedRequest.getHeader("Authorization"));
+        assertNotNull(recordedRequest.getHeader("X-Amz-Date"));
     }
 
     /**
