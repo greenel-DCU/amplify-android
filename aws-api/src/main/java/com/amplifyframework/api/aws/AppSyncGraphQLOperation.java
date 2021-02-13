@@ -17,9 +17,11 @@ package com.amplifyframework.api.aws;
 
 import android.annotation.SuppressLint;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.amplifyframework.AmplifyException;
 import com.amplifyframework.api.ApiException;
+import com.amplifyframework.api.aws.sigv4.AWSRequestSigner;
 import com.amplifyframework.api.graphql.GraphQLOperation;
 import com.amplifyframework.api.graphql.GraphQLRequest;
 import com.amplifyframework.api.graphql.GraphQLResponse;
@@ -51,6 +53,7 @@ public final class AppSyncGraphQLOperation<R> extends GraphQLOperation<R> {
 
     private final String endpoint;
     private final OkHttpClient client;
+    private final AWSRequestSigner requestSigner;
     private final Consumer<GraphQLResponse<R>> onResponse;
     private final Consumer<ApiException> onFailure;
 
@@ -70,11 +73,13 @@ public final class AppSyncGraphQLOperation<R> extends GraphQLOperation<R> {
             @NonNull OkHttpClient client,
             @NonNull GraphQLRequest<R> request,
             @NonNull GraphQLResponse.Factory responseFactory,
+            @Nullable AWSRequestSigner requestSigner,
             @NonNull Consumer<GraphQLResponse<R>> onResponse,
             @NonNull Consumer<ApiException> onFailure) {
         super(request, responseFactory);
         this.endpoint = endpoint;
         this.client = client;
+        this.requestSigner = requestSigner;
         this.onResponse = onResponse;
         this.onFailure = onFailure;
     }
@@ -88,12 +93,13 @@ public final class AppSyncGraphQLOperation<R> extends GraphQLOperation<R> {
 
         try {
             LOG.debug("Request: " + getRequest().getContent());
-            ongoingCall = client.newCall(new Request.Builder()
-                    .url(endpoint)
-                    .addHeader("accept", CONTENT_TYPE)
-                    .addHeader("content-type", CONTENT_TYPE)
-                    .post(RequestBody.create(getRequest().getContent(), MediaType.parse(CONTENT_TYPE)))
-                    .build());
+            Request.Builder httpRequestBuilder = new Request.Builder()
+                .url(endpoint)
+                .addHeader("accept", CONTENT_TYPE)
+                .addHeader("content-type", CONTENT_TYPE)
+                .post(RequestBody.create(getRequest().getContent(), MediaType.parse(CONTENT_TYPE)));
+            Request request = requestSigner.sign(httpRequestBuilder.build());
+            ongoingCall = client.newCall(request);
             ongoingCall.enqueue(new OkHttpCallback());
         } catch (Exception error) {
             // Cancel if possible
@@ -158,6 +164,7 @@ public final class AppSyncGraphQLOperation<R> extends GraphQLOperation<R> {
         private GraphQLResponse.Factory responseFactory;
         private Consumer<GraphQLResponse<R>> onResponse;
         private Consumer<ApiException> onFailure;
+        private AWSRequestSigner requestSigner;
 
         Builder<R> endpoint(@NonNull String endpoint) {
             this.endpoint = Objects.requireNonNull(endpoint);
@@ -179,6 +186,11 @@ public final class AppSyncGraphQLOperation<R> extends GraphQLOperation<R> {
             return this;
         }
 
+        Builder<R> requestSigner(@Nullable AWSRequestSigner requestSigner) {
+            this.requestSigner = requestSigner;
+            return this;
+        }
+
         Builder<R> onResponse(@NonNull Consumer<GraphQLResponse<R>> onResponse) {
             this.onResponse = Objects.requireNonNull(onResponse);
             return this;
@@ -196,6 +208,7 @@ public final class AppSyncGraphQLOperation<R> extends GraphQLOperation<R> {
                 Objects.requireNonNull(client),
                 Objects.requireNonNull(request),
                 Objects.requireNonNull(responseFactory),
+                requestSigner,
                 Objects.requireNonNull(onResponse),
                 Objects.requireNonNull(onFailure)
             );

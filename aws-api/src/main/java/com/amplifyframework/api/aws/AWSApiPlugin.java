@@ -25,6 +25,8 @@ import com.amplifyframework.api.ApiException;
 import com.amplifyframework.api.ApiPlugin;
 import com.amplifyframework.api.aws.auth.AuthRuleRequestDecorator;
 import com.amplifyframework.api.aws.operation.AWSRestOperation;
+import com.amplifyframework.api.aws.sigv4.SingleAuthModeRequestSigner;
+import com.amplifyframework.api.aws.sigv4.AWSRequestSigner;
 import com.amplifyframework.api.events.ApiEndpointStatusChangeEvent;
 import com.amplifyframework.api.events.ApiEndpointStatusChangeEvent.ApiEndpointStatus;
 import com.amplifyframework.api.graphql.GraphQLOperation;
@@ -68,6 +70,9 @@ import okhttp3.Protocol;
  */
 @SuppressWarnings("TypeParameterHidesVisibleType") // <R> shadows >com.amplifyframework.api.aws.R
 public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
+    private static final String APP_SYNC_SERVICE_NAME = "appsync";
+    private static final String API_GATEWAY_SERVICE_NAME = "apigateway";
+
     private final Map<String, ClientDetails> apiDetails;
     private final GraphQLResponse.Factory gqlResponseFactory;
     private final ApiAuthProviders authProvider;
@@ -119,9 +124,6 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
         AWSApiPluginConfiguration pluginConfig =
                 AWSApiPluginConfigurationReader.readFrom(pluginConfiguration);
 
-        final InterceptorFactory interceptorFactory =
-                new AppSyncSigV4SignerInterceptorFactory(authProvider);
-
         for (Map.Entry<String, ApiConfiguration> entry : pluginConfig.getApis().entrySet()) {
             final String apiName = entry.getKey();
             final ApiConfiguration apiConfiguration = entry.getValue();
@@ -129,9 +131,6 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
             final OkHttpClient.Builder builder = new OkHttpClient.Builder();
             builder.addNetworkInterceptor(UserAgentInterceptor.using(UserAgent::string));
             builder.eventListener(new ApiConnectionEventListener());
-            if (apiConfiguration.getAuthorizationType() != AuthorizationType.NONE) {
-                builder.addInterceptor(interceptorFactory.create(apiConfiguration));
-            }
             final OkHttpClient okHttpClient = builder.build();
             final SubscriptionAuthorizer subscriptionAuthorizer =
                     new SubscriptionAuthorizer(apiConfiguration, authProvider);
@@ -143,7 +142,25 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
             if (EndpointType.GRAPHQL.equals(endpointType)) {
                 gqlApis.add(apiName);
             }
-            apiDetails.put(apiName, new ClientDetails(apiConfiguration, okHttpClient, subscriptionEndpoint));
+            final String serviceName = EndpointType.GRAPHQL.equals(endpointType) ?
+                                                            APP_SYNC_SERVICE_NAME :
+                                                            API_GATEWAY_SERVICE_NAME;
+
+            SingleAuthModeRequestSigner singleAuthModeRequestSigner = new SingleAuthModeRequestSigner(
+                apiConfiguration.getAuthorizationType(),
+                serviceName,
+                authProvider,
+                apiConfiguration.getApiKey(),
+                apiConfiguration.getRegion());
+
+            final AWSRequestSigner requestSigner =
+                EndpointType.GRAPHQL.equals(endpointType) ? singleAuthModeRequestSigner : singleAuthModeRequestSigner;
+            ;
+
+            apiDetails.put(apiName, new ClientDetails(apiConfiguration,
+                                                      okHttpClient,
+                                                      subscriptionEndpoint,
+                                                      requestSigner));
         }
     }
 
@@ -572,6 +589,7 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
                 .client(clientDetails.getOkHttpClient())
                 .request(graphQLRequest)
                 .responseFactory(gqlResponseFactory)
+                .requestSigner(clientDetails.getRequestSigner())
                 .onResponse(onResponse)
                 .onFailure(onFailure)
                 .build();
@@ -632,6 +650,7 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
         AWSRestOperation operation = new AWSRestOperation(operationRequest,
                 clientDetails.apiConfiguration.getEndpoint(),
                 clientDetails.okHttpClient,
+                clientDetails.getRequestSigner(),
                 onResponse,
                 onFailure
         );
@@ -646,6 +665,7 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
         private final ApiConfiguration apiConfiguration;
         private final OkHttpClient okHttpClient;
         private final SubscriptionEndpoint subscriptionEndpoint;
+        private final AWSRequestSigner requestSigner;
 
         /**
          * Constructs a client detail object containing client and url.
@@ -655,9 +675,18 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
                 final ApiConfiguration apiConfiguration,
                 final OkHttpClient okHttpClient,
                 final SubscriptionEndpoint subscriptionEndpoint) {
+            this(apiConfiguration, okHttpClient, subscriptionEndpoint, null);
+        }
+
+        ClientDetails(
+            final ApiConfiguration apiConfiguration,
+            final OkHttpClient okHttpClient,
+            final SubscriptionEndpoint subscriptionEndpoint,
+            final AWSRequestSigner requestSigner) {
             this.apiConfiguration = apiConfiguration;
             this.okHttpClient = okHttpClient;
             this.subscriptionEndpoint = subscriptionEndpoint;
+            this.requestSigner = requestSigner;
         }
 
         ApiConfiguration getApiConfiguration() {
@@ -670,6 +699,10 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
 
         SubscriptionEndpoint getSubscriptionEndpoint() {
             return subscriptionEndpoint;
+        }
+
+        AWSRequestSigner getRequestSigner() {
+            return requestSigner;
         }
 
         @Override

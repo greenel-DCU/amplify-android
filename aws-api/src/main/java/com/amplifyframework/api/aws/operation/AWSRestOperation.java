@@ -17,9 +17,11 @@ package com.amplifyframework.api.aws.operation;
 
 import android.annotation.SuppressLint;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.amplifyframework.AmplifyException;
 import com.amplifyframework.api.ApiException;
+import com.amplifyframework.api.aws.sigv4.AWSRequestSigner;
 import com.amplifyframework.api.aws.utils.RestRequestFactory;
 import com.amplifyframework.api.rest.RestOperation;
 import com.amplifyframework.api.rest.RestOperationRequest;
@@ -47,6 +49,7 @@ public final class AWSRestOperation extends RestOperation {
     private final OkHttpClient client;
     private final Consumer<RestResponse> onResponse;
     private final Consumer<ApiException> onFailure;
+    private final AWSRequestSigner requestSigner;
 
     private Call ongoingCall;
 
@@ -59,14 +62,16 @@ public final class AWSRestOperation extends RestOperation {
      * @param onFailure Callback to be invoked when there is a failure to obtain any response
      */
     public AWSRestOperation(
-            @NonNull RestOperationRequest request,
-            @NonNull String endpoint,
-            @NonNull OkHttpClient client,
-            @NonNull Consumer<RestResponse> onResponse,
-            @NonNull Consumer<ApiException> onFailure) {
+        @NonNull RestOperationRequest request,
+        @NonNull String endpoint,
+        @NonNull OkHttpClient client,
+        @Nullable AWSRequestSigner requestSigner,
+        @NonNull Consumer<RestResponse> onResponse,
+        @NonNull Consumer<ApiException> onFailure) {
         super(Objects.requireNonNull(request));
         this.endpoint = Objects.requireNonNull(endpoint);
         this.client = Objects.requireNonNull(client);
+        this.requestSigner = requestSigner;
         this.onResponse = Objects.requireNonNull(onResponse);
         this.onFailure = Objects.requireNonNull(onFailure);
     }
@@ -81,10 +86,10 @@ public final class AWSRestOperation extends RestOperation {
             URL url = RestRequestFactory.createURL(endpoint,
                     getRequest().getPath(),
                     getRequest().getQueryParameters());
-            Request request = RestRequestFactory.createRequest(url,
+            Request request = requestSigner.sign(RestRequestFactory.createRequest(url,
                     getRequest().getData(),
                     getRequest().getHeaders(),
-                    getRequest().getHttpMethod());
+                    getRequest().getHttpMethod()));
             ongoingCall = client.newCall(request);
             ongoingCall.enqueue(new AWSRestOperation.OkHttpCallback());
         } catch (Exception error) {
