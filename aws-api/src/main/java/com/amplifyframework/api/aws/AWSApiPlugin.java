@@ -25,7 +25,9 @@ import com.amplifyframework.api.ApiException;
 import com.amplifyframework.api.ApiPlugin;
 import com.amplifyframework.api.aws.auth.AuthRuleRequestDecorator;
 import com.amplifyframework.api.aws.operation.AWSRestOperation;
+import com.amplifyframework.api.aws.sigv4.ApiKeyAuthProvider;
 import com.amplifyframework.api.aws.sigv4.AppSyncRequestSigner;
+import com.amplifyframework.api.aws.sigv4.DefaultCognitoUserPoolsAuthProvider;
 import com.amplifyframework.api.events.ApiEndpointStatusChangeEvent;
 import com.amplifyframework.api.events.ApiEndpointStatusChangeEvent.ApiEndpointStatus;
 import com.amplifyframework.api.graphql.GraphQLOperation;
@@ -42,6 +44,7 @@ import com.amplifyframework.core.Action;
 import com.amplifyframework.core.Amplify;
 import com.amplifyframework.core.Consumer;
 import com.amplifyframework.core.model.ModelOperation;
+import com.amplifyframework.core.model.ModelProvider;
 import com.amplifyframework.core.model.ModelSchema;
 import com.amplifyframework.hub.HubChannel;
 import com.amplifyframework.util.UserAgent;
@@ -82,12 +85,13 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
     private final Set<String> restApis;
     private final Set<String> gqlApis;
     private final AuthProviderChainRepository authProviderChains;
+    private final ModelProvider modelProvider;
 
     /**
      * Default constructor for this plugin without any override.
      */
     public AWSApiPlugin() {
-        this(ApiAuthProviders.noProviderOverrides(), null);
+        this(ApiAuthProviders.noProviderOverrides());
     }
 
     /**
@@ -101,7 +105,15 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
      * @param apiAuthProvider configured instance of {@link ApiAuthProviders}
      */
     public AWSApiPlugin(@NonNull ApiAuthProviders apiAuthProvider) {
-        this(apiAuthProvider, null);
+        this.apiDetails = new HashMap<>();
+        this.gqlResponseFactory = new GsonGraphQLResponseFactory();
+        this.authProvider = Objects.requireNonNull(apiAuthProvider);
+        this.restApis = new HashSet<>();
+        this.gqlApis = new HashSet<>();
+        this.executorService = Executors.newCachedThreadPool();
+        this.requestDecorator = new AuthRuleRequestDecorator(authProvider);
+        this.authProviderChains = null;
+        this.modelProvider = null;
     }
 
     /**
@@ -112,10 +124,10 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
      * the plugin will assume default behavior for that specific
      * mode of authorization.
      *
-     * @param apiAuthProvider configured instance of {@link ApiAuthProviders}
-     * @param authProviderChains configured instance of {@link com.amplifyframework.api.aws.AuthProviderChainRepository}
+     * @param apiAuthProvider configured instance of {@link ApiAuthProviders}.
+     * @param modelProvider an instance of a class that implements the {@link ModelProvider} interface.
      */
-    public AWSApiPlugin(@NonNull ApiAuthProviders apiAuthProvider, AuthProviderChainRepository authProviderChains) {
+    public AWSApiPlugin(@NonNull ApiAuthProviders apiAuthProvider, ModelProvider modelProvider) {
         this.apiDetails = new HashMap<>();
         this.gqlResponseFactory = new GsonGraphQLResponseFactory();
         this.authProvider = Objects.requireNonNull(apiAuthProvider);
@@ -123,7 +135,8 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
         this.gqlApis = new HashSet<>();
         this.executorService = Executors.newCachedThreadPool();
         this.requestDecorator = new AuthRuleRequestDecorator(authProvider);
-        this.authProviderChains = authProviderChains;
+        this.modelProvider = modelProvider;
+        this.authProviderChains = new AuthProviderChainRepository(modelProvider.modelSchemas());
     }
 
     @NonNull
@@ -140,6 +153,10 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
         // Null-check for configuration is done inside readFrom method
         AWSApiPluginConfiguration pluginConfig =
                 AWSApiPluginConfigurationReader.readFrom(pluginConfiguration);
+        DefaultCognitoUserPoolsAuthProvider defaultCognitoUserPoolsAuthProvider =
+            new DefaultCognitoUserPoolsAuthProvider();
+
+
 
         for (Map.Entry<String, ApiConfiguration> entry : pluginConfig.getApis().entrySet()) {
             final String apiName = entry.getKey();
@@ -159,7 +176,18 @@ public final class AWSApiPlugin extends ApiPlugin<Map<String, OkHttpClient>> {
             if (EndpointType.GRAPHQL.equals(endpointType)) {
                 gqlApis.add(apiName);
             }
-            AppSyncRequestSigner requestSigner = new AppSyncRequestSigner(authProvider,
+
+            //TODO: Need a better way to allow for easier injection of providers
+            ApiAuthProviders apiAuthProvider = ApiAuthProviders.builder()
+                .cognitoUserPoolsAuthProvider(defaultCognitoUserPoolsAuthProvider)
+                .apiKeyAuthProvider(new ApiKeyAuthProvider() {
+                    @Override
+                    public String getAPIKey() {
+                        return apiConfiguration.getApiKey();
+                    }
+                })
+                .build();
+            AppSyncRequestSigner requestSigner = new AppSyncRequestSigner(apiAuthProvider,
                                                                           apiConfiguration.getApiKey(),
                                                                           apiConfiguration.getRegion());
             apiDetails.put(apiName, new ClientDetails(apiConfiguration,
